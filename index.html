@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>巨大ビニール風船 — 風シミュレーション</title>
+<style>
+  :root {
+    --panel-bg: rgba(20, 22, 28, 0.72);
+    --panel-border: rgba(255, 255, 255, 0.12);
+    --text: rgba(255, 255, 255, 0.92);
+    --text-dim: rgba(255, 255, 255, 0.55);
+    --accent: #ff8a5c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    /* 奥行きのある暗い空気感。風船を主役にするための背景。 */
+    background:
+      radial-gradient(120% 120% at 50% 18%, #2a3550 0%, #161a26 45%, #0c0e15 100%);
+    color: var(--text);
+    -webkit-user-select: none; user-select: none;
+    touch-action: none;
+  }
+  #scene { position: fixed; inset: 0; display: block; cursor: crosshair; }
+
+  /* 操作ヒント（上部・控えめ） */
+  #hint {
+    position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+    font-size: 13px; letter-spacing: 0.02em; color: var(--text-dim);
+    text-align: center; line-height: 1.6; pointer-events: none;
+    transition: opacity 0.6s ease; text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  }
+  #hint b { color: var(--text); font-weight: 500; }
+
+  /* コントロールパネル（左下・最小限） */
+  #panel {
+    position: fixed; left: 18px; bottom: 18px;
+    width: 248px; padding: 16px 18px 18px;
+    background: var(--panel-bg); border: 1px solid var(--panel-border);
+    border-radius: 14px; backdrop-filter: blur(12px);
+  }
+  #panel h1 {
+    font-size: 13px; font-weight: 500; letter-spacing: 0.04em;
+    color: var(--text-dim); text-transform: none; margin-bottom: 14px;
+  }
+  .row { margin-bottom: 13px; }
+  .row:last-child { margin-bottom: 0; }
+  .row label {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 13px; color: var(--text); margin-bottom: 6px;
+  }
+  .row label .val { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+  input[type="range"] {
+    width: 100%; height: 4px; -webkit-appearance: none; appearance: none;
+    background: rgba(255,255,255,0.18); border-radius: 4px; outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 16px; height: 16px;
+    border-radius: 50%; background: var(--accent); cursor: pointer;
+    border: 2px solid #fff;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 16px; height: 16px; border-radius: 50%; background: var(--accent);
+    cursor: pointer; border: 2px solid #fff;
+  }
+  #reset {
+    width: 100%; margin-top: 4px; padding: 8px; font-size: 13px;
+    color: var(--text); background: rgba(255,255,255,0.08);
+    border: 1px solid var(--panel-border); border-radius: 9px; cursor: pointer;
+  }
+  #reset:hover { background: rgba(255,255,255,0.14); }
+  #reset:active { transform: scale(0.98); }
+  @media (prefers-reduced-motion: reduce) { #hint { transition: none; } }
+</style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div id="hint"><b>カーソルを風船に当てて風を送る</b><br>ドラッグで視点を回転</div>
+
+  <div id="panel">
+    <h1>巨大ビニール風船</h1>
+    <div class="row">
+      <label>風の強さ <span class="val" id="windVal">8</span></label>
+      <input type="range" id="wind" min="0" max="25" step="0.5" value="8" />
+    </div>
+    <div class="row">
+      <label>張り（内圧） <span class="val" id="pressVal">80</span></label>
+      <input type="range" id="press" min="15" max="220" step="5" value="80" />
+    </div>
+    <div class="row">
+      <label>膜のやわらかさ <span class="val" id="softVal">0.92</span></label>
+      <input type="range" id="soft" min="0.5" max="1" step="0.01" value="0.92" />
+    </div>
+    <div class="row">
+      <button id="reset">形をリセット</button>
+    </div>
+  </div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ============================================================
+  // 1. アイコスフィア生成（頂点を溶接した連結メッシュ）
+  //    IcosahedronGeometry は頂点が重複していて膜がバラける為、
+  //    中点をキャッシュして共有頂点の球を自前で作る。
+  // ============================================================
+  function buildIcosphere(radius, subdiv) {
+    const t = (1 + Math.sqrt(5)) / 2;
+    let verts = [
+      [-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0],
+      [0, -1, t], [0, 1, t], [0, -1, -t], [0, 1, -t],
+      [t, 0, -1], [t, 0, 1], [-t, 0, -1], [-t, 0, 1],
+    ];
+    let faces = [
+      [0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],
+      [1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],
+      [3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],
+      [4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1],
+    ];
+    for (let s = 0; s < subdiv; s++) {
+      const mid = {};
+      const nf = [];
+      const midpoint = (a, b) => {
+        const key = a < b ? a + "_" + b : b + "_" + a;
+        if (mid[key] !== undefined) return mid[key];
+        const va = verts[a], vb = verts[b];
+        verts.push([(va[0]+vb[0])/2, (va[1]+vb[1])/2, (va[2]+vb[2])/2]);
+        return (mid[key] = verts.length - 1);
+      };
+      for (const f of faces) {
+        const a = midpoint(f[0], f[1]);
+        const b = midpoint(f[1], f[2]);
+        const c = midpoint(f[2], f[0]);
+        nf.push([f[0],a,c],[f[1],b,a],[f[2],c,b],[a,b,c]);
+      }
+      faces = nf;
+    }
+    // 球面に正規化して半径を掛ける
+    const pos = new Float32Array(verts.length * 3);
+    for (let i = 0; i < verts.length; i++) {
+      const v = verts[i];
+      const len = Math.hypot(v[0], v[1], v[2]);
+      pos[i*3]   = v[0]/len*radius;
+      pos[i*3+1] = v[1]/len*radius;
+      pos[i*3+2] = v[2]/len*radius;
+    }
+    // 一意な辺（距離拘束用）
+    const edgeSet = new Set();
+    const edges = [];
+    const addEdge = (a, b) => {
+      const key = a < b ? a + "_" + b : b + "_" + a;
+      if (edgeSet.has(key)) return;
+      edgeSet.add(key);
+      const dx = pos[b*3]-pos[a*3], dy = pos[b*3+1]-pos[a*3+1], dz = pos[b*3+2]-pos[a*3+2];
+      edges.push({ a, b, rest: Math.hypot(dx, dy, dz) });
+    };
+    for (const f of faces) { addEdge(f[0],f[1]); addEdge(f[1],f[2]); addEdge(f[2],f[0]); }
+    const index = new Uint16Array(faces.length * 3);
+    for (let i = 0; i < faces.length; i++) {
+      index[i*3] = faces[i][0]; index[i*3+1] = faces[i][1]; index[i*3+2] = faces[i][2];
+    }
+    return { pos, index, faces, edges, count: verts.length };
+  }
+
+  // ============================================================
+  // 2. シーン / カメラ / レンダラ
+  // ============================================================
+  const RADIUS = 5;                 // 半径5m ≒ 直径10mの風船
+  const canvas = document.getElementById("scene");
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x0c0e15, 0.012);
+
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
+  let camAz = 0.6, camPolar = 1.35, camDist = 17;
+  function placeCamera() {
+    camera.position.set(
+      camDist * Math.sin(camPolar) * Math.sin(camAz),
+      camDist * Math.cos(camPolar),
+      camDist * Math.sin(camPolar) * Math.cos(camAz)
+    );
+    camera.lookAt(0, 0, 0);
+  }
+
+  // ライティング：柔らかい環境光＋斜め前からのキーライトで膜の張りを出す
+  scene.add(new THREE.HemisphereLight(0xbcd0ff, 0x202020, 0.85));
+  const key = new THREE.DirectionalLight(0xffffff, 1.1);
+  key.position.set(8, 12, 10); scene.add(key);
+  const rim = new THREE.DirectionalLight(0x88aaff, 0.6);
+  rim.position.set(-10, -4, -8); scene.add(rim);
+
+  // 薄いビニールらしい半透明＆光沢のマテリアル
+  const material = new THREE.MeshPhysicalMaterial({
+    color: 0xff6a4d,
+    roughness: 0.32,
+    metalness: 0.0,
+    clearcoat: 0.7,
+    clearcoatRoughness: 0.35,
+    transparent: true,
+    opacity: 0.84,
+    side: THREE.DoubleSide,
+  });
+
+  // ============================================================
+  // 3. メッシュ + Verlet物理の状態
+  // ============================================================
+  let mesh, geometry, sphere;
+  let pos, prev, frc, edges, faces, N;
+  let restVolume = 0;
+
+  function computeVolume(p) {
+    // 符号付き四面体の総和で閉曲面の体積を求める
+    let v = 0;
+    for (let i = 0; i < faces.length; i++) {
+      const a = faces[i][0]*3, b = faces[i][1]*3, c = faces[i][2]*3;
+      const ax=p[a],ay=p[a+1],az=p[a+2];
+      const bx=p[b],by=p[b+1],bz=p[b+2];
+      const cx=p[c],cy=p[c+1],cz=p[c+2];
+      v += (ax*(by*cz - bz*cy) + ay*(bz*cx - bx*cz) + az*(bx*cy - by*cx));
+    }
+    return v / 6;
+  }
+
+  function buildBalloon() {
+    sphere = buildIcosphere(RADIUS, 3); // detail3 → 642頂点 / 1280面
+    N = sphere.count;
+    faces = sphere.faces;
+    edges = sphere.edges;
+
+    pos  = new Float32Array(sphere.pos);  // 現在位置
+    prev = new Float32Array(sphere.pos);  // 1ステップ前の位置（=速度0で開始）
+    frc  = new Float32Array(N * 3);       // 力の蓄積
+    restVolume = computeVolume(pos);
+
+    geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    geometry.setIndex(new THREE.BufferAttribute(sphere.index, 1));
+    geometry.computeVertexNormals();
+
+    if (mesh) scene.remove(mesh);
+    mesh = new THREE.Mesh(geometry, material);
+    scene.add(mesh);
+  }
+
+  function resetShape() {
+    pos.set(sphere.pos);
+    prev.set(sphere.pos);
+    restVolume = computeVolume(pos);
+  }
+
+  // ============================================================
+  // 4. 風（カーソル）の入力
+  // ============================================================
+  const raycaster = new THREE.Raycaster();
+  const ndc = new THREE.Vector2();
+  let hovering = false, dragging = false, lastX = 0, lastY = 0;
+  let cursorSpeed = 0;
+  const wind = { active: false, px: 0, py: 0, pz: 0, dx: 0, dy: 0, dz: 0 };
+
+  function updateWindTarget() {
+    if (dragging) { wind.active = false; return; }
+    raycaster.setFromCamera(ndc, camera);
+    const hits = raycaster.intersectObject(mesh);
+    if (hits.length) {
+      const p = hits[0].point;
+      wind.active = true;
+      wind.px = p.x; wind.py = p.y; wind.pz = p.z;
+      // 風向き＝カメラから当たり点へ（画面の奥へ押し込む）
+      const d = raycaster.ray.direction;
+      wind.dx = d.x; wind.dy = d.y; wind.dz = d.z;
+    } else {
+      wind.active = false;
+    }
+  }
+
+  canvas.addEventListener("pointermove", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    ndc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    ndc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    const sp = Math.hypot(e.clientX - lastX, e.clientY - lastY);
+    lastX = e.clientX; lastY = e.clientY;
+    if (dragging) {
+      camAz   -= (e.clientX - (lastDragX ?? e.clientX)) * 0; // placeholder
+    }
+    cursorSpeed = Math.min(cursorSpeed + sp, 60);
+    hovering = true;
+  });
+
+  // ドラッグ＝視点回転（風とは分離）
+  let lastDragX = null, lastDragY = null;
+  canvas.addEventListener("pointerdown", (e) => {
+    dragging = true; lastDragX = e.clientX; lastDragY = e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+    document.getElementById("hint").style.opacity = "0";
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    camAz   -= (e.clientX - lastDragX) * 0.005;
+    camPolar -= (e.clientY - lastDragY) * 0.005;
+    camPolar = Math.max(0.25, Math.min(Math.PI - 0.25, camPolar));
+    lastDragX = e.clientX; lastDragY = e.clientY;
+  });
+  function endDrag(e) { dragging = false; }
+  canvas.addEventListener("pointerup", endDrag);
+  canvas.addEventListener("pointercancel", endDrag);
+  canvas.addEventListener("pointerleave", () => { hovering = false; wind.active = false; });
+
+  // ============================================================
+  // 5. 物理ステップ（位置ベースVerlet + 拘束緩和）
+  // ============================================================
+  const DT = 1 / 120;        // 固定タイムステップ
+  const GRAVITY = -1.2;      // ほぼ浮力と釣り合う軽い重力
+  const CENTER_K = 0.7;      // 画面内に保つ為の重心の戻し
+  const DAMP = 0.992;        // 速度減衰
+  let pressureK = 80;        // 内圧（張り）
+  let stiffness = 0.92;      // 距離拘束の硬さ（膜のやわらかさ）
+  let windStrength = 8;
+  const ITER = 4;            // 拘束を満たす反復回数
+
+  // 各面の法線×面積（外向き）。一時バッファ。
+  function accumulatePressure(p, P) {
+    for (let i = 0; i < faces.length; i++) {
+      const ai = faces[i][0]*3, bi = faces[i][1]*3, ci = faces[i][2]*3;
+      const e1x=p[bi]-p[ai], e1y=p[bi+1]-p[ai+1], e1z=p[bi+2]-p[ai+2];
+      const e2x=p[ci]-p[ai], e2y=p[ci+1]-p[ai+1], e2z=p[ci+2]-p[ai+2];
+      // cross(e1,e2) = 外向き法線 × 2*面積
+      const nx = (e1y*e2z - e1z*e2y) * 0.5;
+      const ny = (e1z*e2x - e1x*e2z) * 0.5;
+      const nz = (e1x*e2y - e1y*e2x) * 0.5;
+      const fx = nx*P, fy = ny*P, fz = nz*P;
+      frc[ai]+=fx; frc[ai+1]+=fy; frc[ai+2]+=fz;
+      frc[bi]+=fx; frc[bi+1]+=fy; frc[bi+2]+=fz;
+      frc[ci]+=fx; frc[ci+1]+=fy; frc[ci+2]+=fz;
+    }
+  }
+
+  function step() {
+    frc.fill(0);
+
+    // --- 重心を原点へ戻す（変形させず平行移動だけ抑える） ---
+    let cx=0, cy=0, cz=0;
+    for (let i=0;i<N;i++){ cx+=pos[i*3]; cy+=pos[i*3+1]; cz+=pos[i*3+2]; }
+    cx/=N; cy/=N; cz/=N;
+    const rcx=-CENTER_K*cx, rcy=-CENTER_K*cy, rcz=-CENTER_K*cz;
+
+    // --- 内圧：初期体積を保つ向きに各面を押す ---
+    const V = computeVolume(pos);
+    const P = pressureK * (restVolume / Math.max(V, 1e-3) - 1);
+    accumulatePressure(pos, P);
+
+    // --- 重力・重心戻し ---
+    for (let i=0;i<N;i++){
+      frc[i*3]   += rcx;
+      frc[i*3+1] += GRAVITY + rcy;
+      frc[i*3+2] += rcz;
+    }
+
+    // --- 風（カーソル当たり点の近傍に力を加える） ---
+    if (wind.active) {
+      const str = windStrength * (1 + cursorSpeed * 0.05);
+      const r2 = (RADIUS * 0.55) * (RADIUS * 0.55);
+      for (let i=0;i<N;i++){
+        const ddx=pos[i*3]-wind.px, ddy=pos[i*3+1]-wind.py, ddz=pos[i*3+2]-wind.pz;
+        const dist2 = ddx*ddx+ddy*ddy+ddz*ddz;
+        const w = Math.exp(-dist2 / r2);   // 当たり点からのガウシアン減衰
+        if (w < 0.02) continue;
+        const f = str * w;
+        // 少しだけ揺らぎを足して生きた風に
+        frc[i*3]   += wind.dx*f + (Math.random()-0.5)*f*0.3;
+        frc[i*3+1] += wind.dy*f + (Math.random()-0.5)*f*0.3;
+        frc[i*3+2] += wind.dz*f + (Math.random()-0.5)*f*0.3;
+      }
+    }
+
+    // --- Verlet積分： x' = x + (x - x_prev)*damp + (F/m)*dt^2 ---
+    const dt2 = DT * DT;
+    for (let i=0;i<N*3;i++){
+      const cur = pos[i];
+      const vel = (cur - prev[i]) * DAMP;
+      pos[i] = cur + vel + frc[i] * dt2;
+      prev[i] = cur;
+    }
+
+    // --- 距離拘束を反復で満たす（膜の伸びを抑える） ---
+    for (let it=0; it<ITER; it++){
+      for (let k=0;k<edges.length;k++){
+        const e = edges[k], a = e.a*3, b = e.b*3;
+        const dx=pos[b]-pos[a], dy=pos[b+1]-pos[a+1], dz=pos[b+2]-pos[a+2];
+        const d = Math.hypot(dx,dy,dz) || 1e-6;
+        const diff = (d - e.rest) / d * 0.5 * stiffness;
+        const ox=dx*diff, oy=dy*diff, oz=dz*diff;
+        pos[a]+=ox; pos[a+1]+=oy; pos[a+2]+=oz;
+        pos[b]-=ox; pos[b+1]-=oy; pos[b+2]-=oz;
+      }
+    }
+  }
+
+  // ============================================================
+  // 6. メインループ（固定ステップ + アキュムレータ）
+  //    requestAnimationFrame の可変Δtを固定Δtで小刻みに消化する
+  // ============================================================
+  let acc = 0, last = performance.now();
+  function loop(now) {
+    let frame = (now - last) / 1000;
+    last = now;
+    if (frame > 0.1) frame = 0.1;   // タブ復帰などの暴走を防ぐ
+    acc += frame;
+
+    updateWindTarget();
+    let steps = 0;
+    while (acc >= DT && steps < 8) { step(); acc -= DT; steps++; }
+    cursorSpeed *= 0.85;            // カーソル速度の減衰
+
+    geometry.attributes.position.needsUpdate = true;
+    geometry.computeVertexNormals();
+    geometry.computeBoundingSphere();
+    placeCamera();
+    renderer.render(scene, camera);
+    requestAnimationFrame(loop);
+  }
+
+  // ============================================================
+  // 7. リサイズ・UI・起動
+  // ============================================================
+  function resize() {
+    const w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener("resize", resize);
+
+  const windEl = document.getElementById("wind");
+  const pressEl = document.getElementById("press");
+  const softEl = document.getElementById("soft");
+  windEl.addEventListener("input", e => {
+    windStrength = +e.target.value;
+    document.getElementById("windVal").textContent = windStrength;
+  });
+  pressEl.addEventListener("input", e => {
+    pressureK = +e.target.value;
+    document.getElementById("pressVal").textContent = pressureK;
+  });
+  softEl.addEventListener("input", e => {
+    stiffness = +e.target.value;
+    document.getElementById("softVal").textContent = (+e.target.value).toFixed(2);
+  });
+  document.getElementById("reset").addEventListener("click", resetShape);
+
+  buildBalloon();
+  resize();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
