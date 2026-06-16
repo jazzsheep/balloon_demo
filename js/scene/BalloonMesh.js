@@ -18,17 +18,17 @@ export class BalloonMesh {
 
     // 農業用ビニールシート：薄膜干渉による虹色＋高い透過性
     this.material = new THREE.MeshPhysicalMaterial({
-      color: 0xddeeff,          // ほぼ無色透明のベース
-      roughness: 0.04,          // 表面は滑らか
+      color: 0x050810,          // ほぼ黒：暗いほど表面の虹彩が鮮明になる
+      roughness: 0.03,
       metalness: 0.0,
-      transmission: 0.72,       // 光を通す（農業用ビニールらしい透け感）
-      thickness: 0.4,           // 膜の厚み（透過色の屈折に影響）
+      transmission: 0.55,       // 光を通す透過感（高すぎると虹彩が薄れる）
+      thickness: 0.3,
       ior: 1.46,                // ポリエチレンの屈折率
       clearcoat: 1.0,
-      clearcoatRoughness: 0.05,
-      iridescence: 1.0,         // 複屈折（薄膜干渉）を最大に
-      iridescenceIOR: 1.38,     // 薄膜層の屈折率
-      iridescenceThicknessRange: [200, 800], // 膜厚(nm)の範囲で色域が決まる
+      clearcoatRoughness: 0.03,
+      iridescence: 1.0,
+      iridescenceIOR: 1.55,     // 高めにすると色相の帯域が広がる
+      iridescenceThicknessRange: [100, 600], // 薄め寄りにすると青〜緑〜金が出やすい
       side: THREE.DoubleSide,
     });
 
