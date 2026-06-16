@@ -16,6 +16,8 @@ export class SceneManager {
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, SCENE.maxPixelRatio));
+    // transmission（物理的な光透過）を有効にするために必要
+    this.renderer.capabilities.logarithmicDepthBuffer = false;
 
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.FogExp2(SCENE.fogColor, SCENE.fogDensity);
@@ -24,16 +26,18 @@ export class SceneManager {
   }
 
   _setupLights() {
-    // ライティング：柔らかい環境光＋斜め前からのキーライトで膜の張りを出す
-    this.scene.add(new THREE.HemisphereLight(0xbcd0ff, 0x202020, 0.85));
+    // 空（青白）と地面（やや暖色）の環境光で屋外の散乱光を模倣
+    this.scene.add(new THREE.HemisphereLight(0xc8deff, 0x8a7050, 0.6));
 
-    const key = new THREE.DirectionalLight(0xffffff, 1.1);
-    key.position.set(8, 12, 10);
-    this.scene.add(key);
+    // 太陽光：やや黄みがかった強い平行光、南西の高い位置から
+    const sun = new THREE.DirectionalLight(0xfff4d6, 3.5);
+    sun.position.set(6, 14, 8);
+    this.scene.add(sun);
 
-    const rim = new THREE.DirectionalLight(0x88aaff, 0.6);
-    rim.position.set(-10, -4, -8);
-    this.scene.add(rim);
+    // 空からの反射（薄い青）
+    const sky = new THREE.DirectionalLight(0x99bbff, 0.4);
+    sky.position.set(-8, 6, -6);
+    this.scene.add(sky);
   }
 
   add(object3D) {

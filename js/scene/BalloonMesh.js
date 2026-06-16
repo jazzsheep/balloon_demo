@@ -16,14 +16,19 @@ export class BalloonMesh {
     this.geometry.setIndex(new THREE.BufferAttribute(index, 1));
     this.geometry.computeVertexNormals();
 
+    // 農業用ビニールシート：薄膜干渉による虹色＋高い透過性
     this.material = new THREE.MeshPhysicalMaterial({
-      color: 0xff6a4d,
-      roughness: 0.32,
+      color: 0xddeeff,          // ほぼ無色透明のベース
+      roughness: 0.04,          // 表面は滑らか
       metalness: 0.0,
-      clearcoat: 0.7,
-      clearcoatRoughness: 0.35,
-      transparent: true,
-      opacity: 0.84,
+      transmission: 0.72,       // 光を通す（農業用ビニールらしい透け感）
+      thickness: 0.4,           // 膜の厚み（透過色の屈折に影響）
+      ior: 1.46,                // ポリエチレンの屈折率
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.05,
+      iridescence: 1.0,         // 複屈折（薄膜干渉）を最大に
+      iridescenceIOR: 1.38,     // 薄膜層の屈折率
+      iridescenceThicknessRange: [200, 800], // 膜厚(nm)の範囲で色域が決まる
       side: THREE.DoubleSide,
     });
 
