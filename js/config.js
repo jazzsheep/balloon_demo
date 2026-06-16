@@ -19,9 +19,9 @@ export const PHYSICS = {
 
 /** スライダーで動的に変更できる初期パラメータ。 */
 export const DEFAULTS = {
-  windStrength: 8, // 風の強さ
-  pressureK: 80, // 内圧（張り）
-  stiffness: 0.92, // 距離拘束の硬さ（膜のやわらかさ）
+  windStrength: 25,   // 最大
+  pressureK: 220,     // 最大
+  stiffness: 0.5,     // 最小（最もやわらかい）
 };
 
 export const WIND = {

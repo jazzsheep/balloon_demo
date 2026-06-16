@@ -4,7 +4,6 @@ import { CameraController } from "./scene/CameraController.js";
 import { SceneManager } from "./scene/SceneManager.js";
 import { BalloonMesh } from "./scene/BalloonMesh.js";
 import { WindController } from "./input/WindController.js";
-import { ControlPanel } from "./ui/ControlPanel.js";
 
 /**
  * アプリケーションの組み立てと固定ステップのメインループ。
@@ -28,8 +27,6 @@ class BalloonApp {
       () => { if (hint) hint.style.opacity = "0"; },
     );
     this.windController.setTarget(this.balloonMesh.mesh);
-
-    this.controlPanel = new ControlPanel(this.simulation);
 
     window.addEventListener("resize", () => this.sceneManager.resize());
 

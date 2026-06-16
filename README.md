@@ -7,7 +7,8 @@
 
 - **カーソルを風船に当てる** … 当たり点へ風を送って膜をへこませる
 - **ドラッグ** … 視点を回転
-- **左下パネル** … 風の強さ / 張り（内圧）/ 膜のやわらかさ を調整、形のリセット
+
+風の強さ・内圧・膜のやわらかさは `js/config.js` の `DEFAULTS` で固定している。
 
 ## 実行
 
@@ -41,11 +42,11 @@ js/
   scene/
     SceneManager.js     レンダラ・シーン・ライティング・リサイズ
     CameraController.js オービットカメラと視点回転
-    BalloonMesh.js      Three.js メッシュとマテリアル
+    BalloonMesh.js      Three.js メッシュとマテリアル（薄膜干渉シェーダー注入）
+  shaders/
+    thinFilmChunk.js    薄膜干渉（複屈折）の GLSL チャンク
   input/
     WindController.js   ポインタ入力（風 / 視点回転）
-  ui/
-    ControlPanel.js     スライダーとリセットの DOM 配線
 ```
 
 ### 設計の考え方
@@ -55,4 +56,3 @@ js/
 - **設定の集約** … 調整したい値は `config.js` に集めてあり、挙動の調整がしやすい。
 - **入力の分離** … 風（ホバー）と視点回転（ドラッグ）を `WindController` で振り分ける。
 - **薄いオーケストレーション** … `main.js` は各モジュールを束ねてループを回すだけ。
-```
