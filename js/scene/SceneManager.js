@@ -16,8 +16,6 @@ export class SceneManager {
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, SCENE.maxPixelRatio));
-    // transmission（物理的な光透過）を有効にするために必要
-    this.renderer.capabilities.logarithmicDepthBuffer = false;
 
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.FogExp2(SCENE.fogColor, SCENE.fogDensity);
